@@ -107,25 +107,25 @@ int string_index_of(String str, char c) {
   return i;
 }
 
-int string_index_of_string(String haystack, String needle) {
-  size_t index = -1, i = 0, j = 0;
-  for (; i < haystack.len; i++) {
-    j = 0;
-    while (haystack.data[i] == needle.data[j]) {
-      i++;
-      j++;
-      if (j == needle.len)
-        break;
-    }
-  }
-  if (j == needle.len) {
-    return i - needle.len - 1;
-  } else {
-    return -1;
-  }
-}
+// int string_index_of_string(String haystack, String needle) {
+//   size_t index = -1, i = 0, j = 0;
+//   for (; i < haystack.len; i++) {
+//     j = 0;
+//     while (haystack.data[i] == needle.data[j]) {
+//       i++;
+//       j++;
+//       if (j == needle.len)
+//         break;
+//     }
+//   }
+//   if (j == needle.len) {
+//     return i - needle.len - 1;
+//   } else {
+//     return -1;
+//   }
+// }
 
-int string_index_of_string_v2(String haystack, String needle) {
+int string_index_of_string(String haystack, String needle) {
   for (size_t i = 0; i < haystack.len; i++) {
     size_t j = 0;
     size_t index = i;
@@ -133,7 +133,7 @@ int string_index_of_string_v2(String haystack, String needle) {
       j++;
       i++;
       if (j == needle.len)
-        return index - 1;
+        return index;
     }
   }
   return -1;
@@ -154,14 +154,128 @@ size_t str_index_of(String haystack, String needle) {
   return (size_t)-1;
 }
 
+// NOTE: this does not terminate the string with a 0 as that would destroy the
+/* original string. */
+
+// retorna el substring que se busque aunque pues retorna hasta el final del
+// string
+String str_substring_view(String haystack, String needle) {
+  String r = {0};
+  int index_of_needle = str_index_of(haystack, needle);
+  if (index_of_needle > haystack.len)
+    return r;
+  r.data = &haystack.data[index_of_needle];
+  r.len = needle.len;
+  return r;
+}
+
+void print_string(String str) {
+  size_t i = 0;
+  while (i < str.len) {
+    printf("%c", str.data[i++]);
+  }
+}
+
+void print_string_ln(String str) {
+  size_t i = 0;
+  while (i < str.len) {
+    printf("%c", str.data[i++]);
+  }
+  printf("\n");
+}
+
+bool str_equal(String a, String b) {
+  if (a.len > b.len)
+    return false;
+  size_t i = 0;
+  bool are_equal = true;
+  while (i < a.len) {
+    if (a.data[i] != b.data[i]) {
+      are_equal = false;
+      break;
+    }
+    i++;
+  }
+  return are_equal;
+}
+bool string_copy(String *to, String from) {
+  if (to->len < from.len) {
+    return false;
+  }
+  size_t i = 0;
+  while (i < from.len) {
+    to->data[i] = from.data[i];
+  }
+  return true;
+}
+
+String str_replace(String s, String match, String replacement, Allocator *a) {
+  size_t str_match_idx = str_index_of(s, match);
+  size_t new_len = s.len - match.len + replacement.len;
+  String new_string = string_init(new_len, a);
+
+  for (size_t i = 0; i < str_match_idx; i++) {
+    new_string.data[i] = s.data[i];
+  }
+
+  size_t replacement_end = str_match_idx + replacement.len;
+
+  for (size_t i = str_match_idx, j = 0; i < replacement_end; i++) {
+    new_string.data[i] = replacement.data[j++];
+  }
+
+  for (size_t i = replacement_end, j = str_match_idx + match.len; i < new_len;
+       i++) {
+    new_string.data[i] = s.data[j++];
+  }
+
+  return new_string;
+}
+
+String str_view(String s, size_t start, size_t end) {
+  if (start <= end)
+    return (String){0};
+
+  String string_view = {0};
+  // USA PUTISIMA POINTER ARITHMETIC
+  string_view.data = s.data + start;
+  string_view.len = end - start;
+
+  return string_view;
+}
+
+// aqui podria no usar string init para que el callstack no se haga un cagadero
+// pero k weba clonned_string.data = a.alloc(s.len + 1) clonned_string.len =
+// s.len
+String str_clone(String s, Allocator *a) {
+  String clonned_string = string_init(s.len, a);
+  if (!s.len)
+    return (String){0};
+  memcpy(clonned_string.data, s.data, s.len);
+  return clonned_string;
+}
+
+String *str_split(String s, String delimiter, Allocator *a) {
+  String buffer = string_init(s.len, a);
+  for (size_t i = 0, j = 0; i < s.len; i++) {
+    j = 0;
+    while (s.data[i] == delimiter.data[j]) {
+      if (j == delimiter.len - 1) {
+      }
+    }
+  }
+}
+
 int main(void) {
   Allocator a = {.context = NULL, .alloc = malloc};
-  String test = String("holappjopox");
+  String test = String("asdfasdfsdfpopojasdfasdfjajaaj");
   String test3 = String("popo");
   String test2 = String("animal crossing");
   String stringc = string_concat(test, test2);
   String sub = str_substring(test, 2, 7, &a);
-  printf("%d \n", string_index_of_string(test, test3));
-  printf("%d \n", string_index_of_string_v2(test, test3));
-  printf("%ld \n", str_index_of(test, test3));
+  String found = str_substring_view(test, test3);
+  String replaced = str_replace(test, test3, test2, &a);
+  String clonned = str_clone(test, &a);
+  print_string_ln(test);
+  print_string_ln(clonned);
 }
