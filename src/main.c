@@ -1,3 +1,4 @@
+#include "./array_list.c"
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -12,16 +13,50 @@ typedef struct {
 #define String(str)                                                            \
   (String) { strlen(str), str }
 
-#define temp_allocator()                                                       \
-  &(Allocator) { .context = NULL, .alloc = malloc }
+#define ARRAY_CAPACITY 512
+#define array(T, a) array_init(sizeof(T), ARRAY_CAPACITY, a)
+#define array_header(array) (((Array_Header *)array) - 1)
+#define array_length(array) ((array_header(array))->length)
+#define array_capacity(array) ((Array_Header *)(array)->capacity)
 
-typedef struct {
-  void *context;
-  void *(*alloc)(unsigned long);
-} Allocator;
+#define array_append(a, v)                                                     \
+  ((a) = array_ensure_capacity(a, 1, sizeof(*a)),                              \
+   (a)[array_header(a)->length] = (v), &(a)[array_header(a)->length++])
+
+#define array_remove(array, idx)                                               \
+  do {                                                                         \
+    Array_Header *header = array_header(array);                                \
+    int last_idx = header->length - 1;                                         \
+    if (last_idx == idx) {                                                     \
+      header->length--;                                                        \
+    } else if (header->length > 1) {                                           \
+      void *free_space = &array[idx];                                          \
+      void *last = &array[last_idx];                                           \
+      memcpy(free_space, last, sizeof(*array));                                \
+      header->length--;                                                        \
+    }                                                                          \
+  } while (0);
+
+#define pop_back(array) ((array)[array_header(array)->length])
+
+void print_string(String str) {
+  size_t i = 0;
+  while (i < str.len) {
+    printf("%c", str.data[i++]);
+  }
+}
+
+void print_string_ln(String str) {
+  size_t i = 0;
+  while (i < str.len) {
+    printf("%c", str.data[i++]);
+  }
+  printf("\n");
+}
 
 String string_init(size_t len, Allocator *allocator) {
   String new_str = (String){.len = len, .data = allocator->alloc(len + 1)};
+
   if (!new_str.data)
     return new_str;
 
@@ -36,9 +71,9 @@ String string_init(size_t len, Allocator *allocator) {
 // despues copiamos los bytes de la memoria del primer string al nuevo que
 // estamos haciendo y luego copiamoos el del siguiente a partir dla ultima
 // posicion del prime string por lo que quedaria pegadiiito
-String string_concat(String string_1, String string_2) {
+String string_concat(String string_1, String string_2, Allocator *a) {
   size_t total_size = string_1.len + string_2.len + 1;
-  String new_str_ct = string_init(total_size, temp_allocator());
+  String new_str_ct = string_init(total_size, a);
   char *string = new_str_ct.data;
   memcpy(string, string_1.data, string_1.len);
   memcpy(&string[string_1.len], string_2.data, string_2.len);
@@ -169,21 +204,6 @@ String str_substring_view(String haystack, String needle) {
   return r;
 }
 
-void print_string(String str) {
-  size_t i = 0;
-  while (i < str.len) {
-    printf("%c", str.data[i++]);
-  }
-}
-
-void print_string_ln(String str) {
-  size_t i = 0;
-  while (i < str.len) {
-    printf("%c", str.data[i++]);
-  }
-  printf("\n");
-}
-
 bool str_equal(String a, String b) {
   if (a.len > b.len)
     return false;
@@ -255,27 +275,85 @@ String str_clone(String s, Allocator *a) {
   return clonned_string;
 }
 
+// esta manera esta chida porque funciona de la siguiente manera
+// cuando llegamos aqui sabemos que estamos justo dentro de un delimitador
+// entonces si por ejemplo, nuestro string de entrada fuese el siguiente
+// poopDELIMasdfDELIMgjk
+// la primera vez que entrariamos aqui i valdria 4 (recordemos que hacemos
+// comparacion con la memoria y no vamos viendo caracter por caracter como
+// en otras funciones) entonces, tenemos una variable start que al inicio
+// pues es 0, entonces, sabemos que i es donde se termina el string por lo
+// que tenemos una variable de inicio del string (start 0) y del final (i
+// 4), hacemos un substring con esos dos numeros, y actualizamos el inicio
+// de una manera super cool y esa es sumandole a nuestro final (i 4) el
+// tamaño del propio delimitador, en este caso le sumariamos 5, y ahora
+// nuestro start estaria en 9 que justo pues le corresponde al siguiente
+// elemento, y creo que si hacemos que i valga start podemos ahorrarnos
+// unas iteraciones puesto que no recorreriamos y pues nos saltamos el if
+// del inicio pero pues luego vemos
+// TODO impllemnetar lo k dije aqwui arriba mije
+
 String *str_split(String s, String delimiter, Allocator *a) {
-  String buffer = string_init(s.len, a);
-  for (size_t i = 0, j = 0; i < s.len; i++) {
-    j = 0;
-    while (s.data[i] == delimiter.data[j]) {
-      if (j == delimiter.len - 1) {
-      }
+  String *arr = array(String, a);
+  size_t i = 0, segment_length = 0;
+  size_t start = 0;
+  for (; i < s.len; i++) {
+    if (s.data[i] != delimiter.data[0]) {
+      segment_length++;
+      continue;
+    }
+    if (!memcmp(&s.data[i], delimiter.data, delimiter.len)) {
+      segment_length = 0;
+      size_t end = i;
+      String cloned = str_substring(s, start, end, a);
+      if (cloned.len)
+        array_append(arr, cloned);
+      start = end + delimiter.len;
+      i = start;
     }
   }
+
+  if (start < s.len) {
+    // en este punto start tiene el indice del ultimo caracter que se quedo
+    // a,b,c
+    // en este caso se habria quedaado en c (4)
+    // por lo que hacemos un substring desde ese indice del arreglo original y
+    // hasta el final del arreglo porque pues esto es lo ulitmmo, solamente se
+    // entra aqui si start es menor a s.len, eso quiere decir que en el caso de
+    // que haya un ,a nuestro ciclo no lo agarraria porque se encontraria con el
+    // separador y luego intentaria hacer un substring desde 0 hasta el final
+    // que seria 0, por lo que no estaria haciendo un substring de nada, por lo
+    // que, no lo pone el ciclo, y start estaria en 1 no se XD todo? explicacion
+    array_append(arr, str_substring(s, start, s.len, a));
+  }
+
+  return arr;
 }
+String *str_split_view(String s, String delimiter, Allocator *a) {}
+
+String str_join(String *s, String join, Allocator *a) {}
 
 int main(void) {
-  Allocator a = {.context = NULL, .alloc = malloc};
-  String test = String("asdfasdfsdfpopojasdfasdfjajaaj");
-  String test3 = String("popo");
-  String test2 = String("animal crossing");
-  String stringc = string_concat(test, test2);
-  String sub = str_substring(test, 2, 7, &a);
-  String found = str_substring_view(test, test3);
-  String replaced = str_replace(test, test3, test2, &a);
-  String clonned = str_clone(test, &a);
-  print_string_ln(test);
-  print_string_ln(clonned);
+  Allocator a = {.alloc = my_alloc, .free = my_free, .context = NULL};
+  String *arr = array(String, &a);
+  // String test = String("asdfasdfsdfpopojasdfasdfjajaaj");
+  String split_test = String(",a");
+  String *splittedstr = str_split(split_test, String(","), &a);
+  printf("%ld \n", array_length(splittedstr));
+  for (size_t i = 0; i < array_length(splittedstr); i++) {
+    print_string_ln(splittedstr[i]);
+  }
+  // void *adsf = NULL;
+  // // &(arr)[array_header(arr)->length++]);
+  // String test3 = String("popo");
+  // String test2 = String("animal crossing");
+  // String splitr = String("hola,amigos,como,estan");
+  // String stringc = string_concat(test, test2);
+  // String sub = str_substring(test, 2, 7, &a);
+  // String found = str_substring_view(test, test3);
+  // String replaced = str_replace(test, test3, test2, &a);
+  // String clonned = str_clone(test, &a);
+  // print_string_ln(test);
+  // print_string_ln(clonned);
+  // str_split(split_test, String("pp"), &a);
 }
