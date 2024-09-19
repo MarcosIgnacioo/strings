@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct {
   size_t len;
@@ -253,14 +254,14 @@ String str_replace(String s, String match, String replacement, Allocator *a) {
 }
 
 String str_view(String s, size_t start, size_t end) {
-  if (start <= end)
+  // XD
+  //
+  if (end - start > s.len)
     return (String){0};
-
   String string_view = {0};
   // USA PUTISIMA POINTER ARITHMETIC
   string_view.data = s.data + start;
   string_view.len = end - start;
-
   return string_view;
 }
 
@@ -329,20 +330,83 @@ String *str_split(String s, String delimiter, Allocator *a) {
 
   return arr;
 }
-String *str_split_view(String s, String delimiter, Allocator *a) {}
 
-String str_join(String *s, String join, Allocator *a) {}
+String *str_split_view(String s, String delimiter, Allocator *a) {
+  String *splitted_view_array = array(String, a);
+  size_t start = 0;
+  for (size_t i = 0; i < s.len; i++) {
+    if (s.data[i] != delimiter.data[0]) {
+      continue;
+    }
+    if (!memcmp(&s.data[i], delimiter.data, delimiter.len)) {
+      String splitted_str = {0};
+      splitted_str = str_view(s, start, i);
+      if (splitted_str.len)
+        array_append(splitted_view_array, splitted_str);
+      start = i + delimiter.len;
+    }
+  }
+
+  if (start < s.len) {
+    String splitted_str = {0};
+    splitted_str = str_view(s, start, s.len);
+    if (splitted_str.len)
+      array_append(splitted_view_array, splitted_str);
+  }
+  return splitted_view_array;
+}
+
+String str_join(String *s, String join, Allocator *a) {
+  String joined_str = (String){0};
+  size_t arr_len = array_length(s);
+  size_t start = 0;
+  for (size_t i = 0; i < arr_len; i++) {
+    if (i > 0) {
+      joined_str = string_concat(joined_str, join, a);
+    }
+    joined_str = string_concat(joined_str, s[i], a);
+  }
+  return joined_str;
+}
+
+String str_join_faster(String *s, String join, Allocator *a) {
+  Array_Header *h = array_header(s);
+  String joined_str = (String){0};
+  size_t offset = 0, total_size = 0;
+  for (size_t i = 0; i < h->length; i++) {
+    total_size += s[i].len;
+  }
+  // a,df,s,f,a
+  total_size += join.len * h->length;
+  joined_str.data = a->alloc(total_size);
+  joined_str.len = total_size;
+
+  for (size_t i = 0; i < total_size; i++) {
+    memcpy(&joined_str.data[offset], s[i].data, s[i].len);
+    offset += s[i].len;
+    if (offset == total_size) {
+      break;
+    }
+    memcpy(&joined_str.data[offset], &join.data[i], join.len);
+    offset += join.len;
+  }
+  joined_str.data[offset - 1] = 0;
+  return joined_str;
+}
 
 int main(void) {
   Allocator a = {.alloc = my_alloc, .free = my_free, .context = NULL};
   String *arr = array(String, &a);
   // String test = String("asdfasdfsdfpopojasdfasdfjajaaj");
-  String split_test = String(",a");
-  String *splittedstr = str_split(split_test, String(","), &a);
-  printf("%ld \n", array_length(splittedstr));
-  for (size_t i = 0; i < array_length(splittedstr); i++) {
-    print_string_ln(splittedstr[i]);
-  }
+  String split_test = String("fooasdfasdfa,,,,a,b");
+  String *arrgamer = str_split_view(split_test, String(","), &a);
+  String j = str_join_faster(arrgamer, String("/"), &a);
+  print_string_ln(j);
+
+  // for (size_t i = 0; i < array_length(arrgamer); i++) {
+  //   print_string_ln(arrgamer[i]);
+  // }
+  return 0;
   // void *adsf = NULL;
   // // &(arr)[array_header(arr)->length++]);
   // String test3 = String("popo");
